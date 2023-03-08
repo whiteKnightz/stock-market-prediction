@@ -1,0 +1,32 @@
+---
+title: "Assignment 1 - Group Edith"
+date: "2023-03-04"
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r setup, include = FALSE}
+install.packages("quantmod")
+install.packages("xts")
+install.packages("zoo")
+install.packages("TTR")
+```
+
+
+```{r}
+library(xts)
+library(zoo)
+library(quantmod)
+```
+
+```{r}
+df <- getSymbols(Symbols = "AMZN", src="yahoo", auto.assign = FALSE)
+```
+
+
+Stock charting
+
+```{r}
+
+```
+
