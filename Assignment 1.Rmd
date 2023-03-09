@@ -17,6 +17,8 @@ output:
 
 ```{r}
 library(quantmod)
+library(xts)
+library(zoo)
 library(tseries)
 library(caTools)
 library(forecast)
@@ -85,6 +87,7 @@ ggplot(amz_df, aes(x = YearMonth, y = AMZN.Volume)) +
 
 ```{r}
 library(caret)
+library(lattice)
 ```
 
 # Split the data into training and testing sets
@@ -127,6 +130,7 @@ amz_df <- amz_df %>% mutate(AMZN.Close.lag1 = lag(AMZN.Close, 1),
 
 ```{r}
 amz_df <- amz_df %>% fill(AMZN.Close.lag1, AMZN.Close.lag2, AMZN.Close.lag3)
+head(amz_df)
 ```
 
 # Create dummy variables
@@ -134,7 +138,7 @@ amz_df <- amz_df %>% fill(AMZN.Close.lag1, AMZN.Close.lag2, AMZN.Close.lag3)
 ```{r}
 amz_df <- amz_df %>% mutate_at(vars(Year, Month, Weekday, Quarter, YearQuarter), factor)
 amz_df <- amz_df %>% mutate_at(vars(Year, Quarter, YearQuarter), list(~ . - 1)) %>% select(-Month, -Day, -Weekday)
-amz_df_dummies <- amz_df %>% select(-Year, -Quarter, -YearQuarter, -Weekday) %>% 
+amz_df_dummies <- amz_df %>% select(Year, Quarter, YearQuarter, Weekday) %>% 
   mutate_all(funs(as.integer)) %>% mutate_all(factor) %>% select_if(function(x) !is.numeric(x))
 amz_df_dummies <- amz_df_dummies %>% gather(key = "key", value = "value", -Year, -Quarter, -YearQuarter) %>% 
   unite(dummies, key, value) %>% spread(dummies, value) %>% 
