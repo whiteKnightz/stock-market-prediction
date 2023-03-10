@@ -1,18 +1,19 @@
 ---
 title: "Assignment 1 - Group Edith"
-date: "2023-03-04"
+date: "2023-03-09"
 output:
   html_document: default
   pdf_document: default
 ---
 ```{r setup, include = FALSE}
-#install.packages("quantmod")
-#install.packages("xts")
-#install.packages("zoo")
-#install.packages("TTR")
-#install.packages("tseries")
-#install.packages("caTools")
-#install.packages("forecast")
+install.packages("quantmod")
+install.packages("xts")
+install.packages("zoo")
+install.packages("TTR")
+install.packages("tseries")
+install.packages("caTools")
+install.packages("forecast")
+install.packages("caret")
 ```
 
 ```{r}
@@ -26,7 +27,7 @@ library(forecast)
 
 
 ```{r}
-amz <- getSymbols("AMZN", auto.assign = FALSE, from = "2012-01-01", to = "2016-12-31")
+amz <- getSymbols("AMZN", auto.assign = FALSE, from = "2021-01-01", to = "2023-03-09")
 amz_df <- data.frame(Date = index(amz), coredata(amz))
 head(amz_df)
 ```
@@ -64,6 +65,7 @@ amz_df$YearMonth <- paste(amz_df$Year, amz_df$Month, sep = "-")
 ```{r}
 head(amz_df)
 ```
+
 ```{r}
 library(ggplot2)
 ```
@@ -81,6 +83,7 @@ ggplot(amz_df, aes(x = YearMonth, y = AMZN.Volume)) +
   geom_boxplot() +
   xlab("Year-Month") +
   ylab("Volume") +
+  theme(axis.text.x = element_text(angle = 90))+
   ggtitle("Amazon Stock Volume by Month")
 
 ```
@@ -107,10 +110,11 @@ results <- rfe(train[, -1], train$AMZN.Close, sizes = c(1:ncol(train)-1), rfeCon
 summary(results)
 ```
 
-# Select the top 5 variables
+
+# Select the top variables
 
 ```{r}
-selected_vars <- colnames(train[, -1])[results$optVariables[1:5]]
+selected_vars <- results$optVariables
 ```
 
 ```{r}
@@ -137,7 +141,7 @@ head(amz_df)
 
 ```{r}
 amz_df <- amz_df %>% mutate_at(vars(Year, Month, Weekday, Quarter, YearQuarter), factor)
-amz_df <- amz_df %>% mutate_at(vars(Year, Quarter, YearQuarter), list(~ . - 1)) %>% select(-Month, -Day, -Weekday)
+amz_df <- amz_df %>% mutate_at(vars(Year, Quarter, YearQuarter), list(~ . - 1)) %>% select(-Month, -Day)
 amz_df_dummies <- amz_df %>% select(Year, Quarter, YearQuarter, Weekday) %>% 
   mutate_all(funs(as.integer)) %>% mutate_all(factor) %>% select_if(function(x) !is.numeric(x))
 amz_df_dummies <- amz_df_dummies %>% gather(key = "key", value = "value", -Year, -Quarter, -YearQuarter) %>% 
@@ -146,6 +150,7 @@ amz_df_dummies <- amz_df_dummies %>% gather(key = "key", value = "value", -Year,
   mutate_at(vars(starts_with("Q")), list(~ as.integer(substring(., 2, 2)) == as.integer(substring(Quarter[1], 2, 2))))
 amz_df <- amz_df %>% left_join(amz_df_dummies, by = c("Year", "Quarter", "YearQuarter", "Weekday"))
 ```
+
 
 ```{r}
 library(randomForest)
@@ -165,12 +170,3 @@ predictions <- predict(rf_model, newdata = test[, selected_vars])
 mse <- mean((test$AMZN.Close - predictions)^2)
 print(paste("Mean squared error:", mse))
 ```
-
-# Evaluate the model on the testing set
-
-```{r}
-predictions <- predict(rf_model, newdata = test[, selected_vars])
-mse <- mean((test$AMZN.Close - predictions)^2)
-print(paste("Mean squared error:", mse))
-```
-
