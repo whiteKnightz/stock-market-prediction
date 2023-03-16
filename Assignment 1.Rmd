@@ -1,0 +1,172 @@
+---
+title: "Assignment 1 - Group Edith"
+date: "2023-03-09"
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r setup, include = FALSE}
+install.packages("quantmod")
+install.packages("xts")
+install.packages("zoo")
+install.packages("TTR")
+install.packages("tseries")
+install.packages("caTools")
+install.packages("forecast")
+install.packages("caret")
+```
+
+```{r}
+library(quantmod)
+library(xts)
+library(zoo)
+library(tseries)
+library(caTools)
+library(forecast)
+```
+
+
+```{r}
+amz <- getSymbols("AMZN", auto.assign = FALSE, from = "2021-01-01", to = "2023-03-09")
+amz_df <- data.frame(Date = index(amz), coredata(amz))
+head(amz_df)
+```
+
+# Remove missing values
+
+```{r}
+amz_df <- na.omit(amz_df)
+head(amz_df)
+```
+
+```{r}
+summary(amz_df)
+```
+
+# Remove unnecessary columns
+
+```{r}
+amz_df$Date <- as.Date(amz_df$Date)
+amz_df$Year <- format(amz_df$Date, "%Y")
+amz_df$Month <- format(amz_df$Date, "%m")
+amz_df$Day <- format(amz_df$Date, "%d")
+amz_df$Weekday <- weekdays(amz_df$Date)
+amz_df$Quarter <- as.character(quarters(amz_df$Date))
+amz_df$Quarter <- gsub("Q1", "Q1 FY", amz_df$Quarter)
+amz_df$Quarter <- gsub("Q2", "Q2 FY", amz_df$Quarter)
+amz_df$Quarter <- gsub("Q3", "Q3 FY", amz_df$Quarter)
+amz_df$Quarter <- gsub("Q4", "Q4 FY", amz_df$Quarter)
+amz_df$Quarter <- factor(amz_df$Quarter, levels = c("Q1 FY", "Q2 FY", "Q3 FY", "Q4 FY"))
+amz_df$YearQuarter <- paste(amz_df$Year, amz_df$Quarter, sep = " ")
+amz_df$YearQuarter <- factor(amz_df$YearQuarter, levels = unique(amz_df$YearQuarter))
+amz_df$YearMonth <- paste(amz_df$Year, amz_df$Month, sep = "-")
+```
+
+```{r}
+head(amz_df)
+```
+
+```{r}
+library(ggplot2)
+```
+
+```{r}
+ggplot(amz_df, aes(x = Date, y = AMZN.Close)) +
+  geom_line() +
+  xlab("Date") +
+  ylab("Closing Price") +
+  ggtitle("Amazon Stock Price")
+```
+
+```{r}
+ggplot(amz_df, aes(x = YearMonth, y = AMZN.Volume)) +
+  geom_boxplot() +
+  xlab("Year-Month") +
+  ylab("Volume") +
+  theme(axis.text.x = element_text(angle = 90))+
+  ggtitle("Amazon Stock Volume by Month")
+
+```
+
+```{r}
+library(caret)
+library(lattice)
+```
+
+# Split the data into training and testing sets
+
+```{r}
+set.seed(1234)
+trainIndex <- createDataPartition(amz_df$AMZN.Close, p = 0.8, list = FALSE)
+train <- amz_df[trainIndex, ]
+test <- amz_df[-trainIndex, ]
+```
+
+# Perform recursive feature elimination
+
+```{r}
+control <- rfeControl(functions = rfFuncs, method = "cv", number = 10)
+results <- rfe(train[, -1], train$AMZN.Close, sizes = c(1:ncol(train)-1), rfeControl = control)
+summary(results)
+```
+
+
+# Select the top variables
+
+```{r}
+selected_vars <- results$optVariables
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+```
+
+# Create lag variables
+
+```{r}
+amz_df <- amz_df %>% mutate(AMZN.Close.lag1 = lag(AMZN.Close, 1),
+                                AMZN.Close.lag2 = lag(AMZN.Close, 2),
+                                AMZN.Close.lag3 = lag(AMZN.Close, 3))
+```
+
+# Impute missing values
+
+```{r}
+amz_df <- amz_df %>% fill(AMZN.Close.lag1, AMZN.Close.lag2, AMZN.Close.lag3)
+head(amz_df)
+```
+
+# Create dummy variables
+
+```{r}
+amz_df <- amz_df %>% mutate_at(vars(Year, Month, Weekday, Quarter, YearQuarter), factor)
+amz_df <- amz_df %>% mutate_at(vars(Year, Quarter, YearQuarter), list(~ . - 1)) %>% select(-Month, -Day)
+amz_df_dummies <- amz_df %>% select(Year, Quarter, YearQuarter, Weekday) %>% 
+  mutate_all(funs(as.integer)) %>% mutate_all(factor) %>% select_if(function(x) !is.numeric(x))
+amz_df_dummies <- amz_df_dummies %>% gather(key = "key", value = "value", -Year, -Quarter, -YearQuarter) %>% 
+  unite(dummies, key, value) %>% spread(dummies, value) %>% 
+  mutate_all(funs(ifelse(is.na(.), 0, .))) %>% 
+  mutate_at(vars(starts_with("Q")), list(~ as.integer(substring(., 2, 2)) == as.integer(substring(Quarter[1], 2, 2))))
+amz_df <- amz_df %>% left_join(amz_df_dummies, by = c("Year", "Quarter", "YearQuarter", "Weekday"))
+```
+
+
+```{r}
+library(randomForest)
+```
+
+
+# Train the random forest model using the selected variables
+
+```{r}
+rf_model <- randomForest(AMZN.Close ~ ., data = train[, c(selected_vars, "AMZN.Close")], importance = TRUE)
+```
+
+# Evaluate the model on the testing set
+
+```{r}
+predictions <- predict(rf_model, newdata = test[, selected_vars])
+mse <- mean((test$AMZN.Close - predictions)^2)
+print(paste("Mean squared error:", mse))
+```

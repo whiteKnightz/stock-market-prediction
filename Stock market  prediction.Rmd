@@ -1,0 +1,70 @@
+---
+title: "Assignment 1 - Group Edith"
+date: "2023-03-04"
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r setup, include = FALSE}
+install.packages("quantmod")
+install.packages("xts")
+install.packages("zoo")
+install.packages("TTR")
+install.packages("tseries")
+install.packages("caTools")
+install.packages("forecast")
+```
+
+
+```{r}
+#library(xts)
+#library(zoo)
+library(quantmod)
+library(tseries)
+library(caTools)
+library(forecast)
+```
+
+```{r}
+amz_df <- getSymbols(Symbols = "AMZN", src="yahoo", auto.assign = FALSE)
+head(amz_df)
+```
+
+
+Stock charting
+
+```{r}
+amz_df <- Cl(amz_df)
+chart_Series(amz_df, col="blue")
+add_SMA(n=100, on=1, col="red")
+add_SMA(n=20, on=1, col="black")
+add_RSI(n=14, maType = "SMA")
+add_BBands(n=20, maType = "SMA", sd=1, on=-1)
+add_MACD(fast = 12, slow = 25, signal = 9, maType = "SMA", histogram = TRUE)
+```
+```{r}
+amz_log<-log(amz_df)
+head(amz_log, n=10)
+```
+```{r}
+plot(amz_log, main = "Amazone log data chart")
+```
+```{r}
+amz_diff<-diff(amz_log, leg=1)
+amz_diff<-na.locf(amz_diff, na.rm=TRUE, fromLast = TRUE)
+plot(amz_diff)
+```
+
+```{r}
+adf<-adf.test(amz_diff, alternative=c("stationary","explosive"), k=0)
+adf
+```
+
+```{r}
+train_data<-amz_diff[1:3355]
+```
+
+```{r}
+set.seed(123)
+```
+

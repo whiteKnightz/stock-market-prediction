@@ -1,0 +1,246 @@
+---
+title: "Assignment 1 - Group Edith"
+date: "2023-03-04"
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r setup, include = FALSE}
+library(quantmod)
+library(xts)
+library(zoo)
+library(tseries)
+library(caTools)
+library(forecast)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(randomForest)
+library(caret)
+library(mice)
+```
+
+```{r}
+amz <- getSymbols("AMZN", auto.assign = FALSE, from = "2021-01-01", to = "2023-03-09")
+amz_df <- data.frame(Date = index(amz), coredata(amz))
+```
+
+
+```{r}
+num_missing <- colSums(is.na(amz_df))
+num_cols_missing <- sum(num_missing > 0)
+num_cols_missing
+```
+
+```{r}
+library(mice)
+set.seed(123)  # Use any integer value for the seed
+imputed_data <- mice(amz_df)
+
+# imputed <- mice(amz_df)
+# amz_df <- na.omit(amz_df)
+amz_df <- complete(imputed_data,1)
+amz_df
+```
+
+```{r}
+head(amz_df)
+```
+
+```{r}
+library(corrplot)
+
+# create a correlation matrix for the columns of the data frame
+cor_matrix <- cor(amz_df[,2:6])
+
+# plot the Pearson correlation matrix using the corrplot function
+corrplot(cor_matrix, method = "circle", type = "upper", tl.cex = 0.8)
+```
+
+```{r}
+amz_df <- amz_df %>% 
+  mutate(Year = format(Date, "%Y"),
+         Month = format(Date, "%m"),
+         Day = format(Date, "%d"),
+         Weekday = weekdays(Date),
+         Quarter = as.character(quarters(Date)),
+         Quarter = gsub("Q1", "Q1 FY", Quarter),
+         Quarter = gsub("Q2", "Q2 FY", Quarter),
+         Quarter = gsub("Q3", "Q3 FY", Quarter),
+         Quarter = gsub("Q4", "Q4 FY", Quarter),
+         Quarter = factor(Quarter, levels = c("Q1 FY", "Q2 FY", "Q3 FY", "Q4 FY")),
+         YearQuarter = paste(Year, Quarter, sep = " "),
+         YearQuarter = factor(YearQuarter, levels = unique(YearQuarter)),
+         YearMonth = paste(Year, Month, sep = "-"))
+```
+
+
+```{r}
+amz_df <- amz_df %>% select(-Day)
+```
+
+```{r}
+ggplot(amz_df, aes(x = Date, y = AMZN.Close)) +
+  geom_line() +
+  xlab("Date") +
+  ylab("Closing Price") +
+  ggtitle("Amazon Stock Price")
+```
+
+```{r}
+ggplot(amz_df, aes(x = YearMonth, y = AMZN.Volume)) +
+  geom_boxplot() +
+  xlab("Year-Month") +
+  ylab("Volume") +
+  theme(axis.text.x = element_text(angle = 90))+
+  ggtitle("Amazon Stock Volume by Month")
+```
+
+```{r}
+set.seed(1234)
+trainIndex <- createDataPartition(amz_df$AMZN.Close, p = 0.8, list = FALSE)
+train <- amz_df[trainIndex, ]
+test <- amz_df[-trainIndex, ]
+head(train)
+```
+
+```{r}
+amz_df <- amz_df %>% 
+  mutate(AMZN.Close.lag1 = lag(AMZN.Close, 1),
+         AMZN.Close.lag2 = lag(AMZN.Close, 2),
+         AMZN.Close.lag3 = lag(AMZN.Close, 3))
+```
+
+```{r}
+amz_df <- na.omit(amz_df)
+head(amz_df)
+```
+
+```{r}
+train <- train %>% 
+  mutate(AMZN.Close.lag1 = lag(AMZN.Close, 1),
+         AMZN.Close.lag2 = lag(AMZN.Close, 2),
+         AMZN.Close.lag3 = lag(AMZN.Close, 3))
+test <- test %>% 
+  mutate(AMZN.Close.lag1 = lag(AMZN.Close, 1),
+         AMZN.Close.lag2 = lag(AMZN.Close, 2),
+         AMZN.Close.lag3 = lag(AMZN.Close, 3))
+head(test)
+```
+
+```{r}
+train1 <- na.omit(train)
+test1 <- na.omit(test)
+head(train1)
+```
+
+```{r}
+# train[, -1]
+
+library(rpart)
+fit <- rpart(AMZN.Close ~ ., data=train1[, -(1:4)], method="anova")
+selected_vars1 <- names(sort(round(fit$variable.importance, 2), decreasing = TRUE))[1:7]
+selected_vars1
+```
+
+```{r}
+library(rpart) # for decision tree model
+library(caret)
+# Fit a decision tree model
+model <- rpart(AMZN.Close ~ ., data = train1[, -(1:4)])
+importances <- varImp(model)
+print(importances)
+```
+
+```{r}
+train2<-train1[c(selected_vars1,'Weekday','Year','AMZN.Close')]
+test2<-test1[c(selected_vars1,'Weekday','Year','AMZN.Close')]
+# head(train2[c('YearQuarter','Month','Weekday')])
+```
+
+```{r}
+amz_df <- na.omit(amz_df)
+head(amz_df)
+```
+
+```{r}
+library(fastDummies)
+# train3 <- dummy_cols(train2, select_columns = "YearQuarter")
+
+# create dummy variables for Month
+train4 <- dummy_cols(train2, select_columns = "Month")
+
+# create dummy variables for Weekday
+train5 <- dummy_cols(train4, select_columns = "Weekday")
+
+head(train5)
+```
+
+```{r}
+# test3 <- dummy_cols(test2, select_columns = "YearQuarter")
+
+# create dummy variables for Month
+test4 <- dummy_cols(test2, select_columns = "Month")
+
+# create dummy variables for Weekday
+test4 <- dummy_cols(test4, select_columns = "Weekday")
+
+
+head(test4)
+```
+
+```{r}
+test5 <- select(test4,-"AMZN.Adjusted", -"Month", -"Weekday",-'YearQuarter')
+head(test5)
+```
+
+```{r}
+# head(train2)
+train5 <- select(train4,-"AMZN.Adjusted", -"Month", -"Weekday",-'YearQuarter')
+# head(train5)
+train6<-train4[c("AMZN.Close.lag1","AMZN.Close.lag2","AMZN.Close.lag3","AMZN.Close")]
+head(train6)
+```
+
+```{r}
+selected_vars1
+data<-train[c('AMZN.Adjusted','AMZN.Close.lag1')]
+```
+
+```{r}
+rf_model <- randomForest(AMZN.Close ~ ., data = train6, importance = TRUE)
+```
+
+```{r}
+rf_model1 <- randomForest(AMZN.Close ~ ., data = train5, importance = TRUE)
+```
+
+```{r}
+colnames(train5)
+```
+
+```{r}
+# predictions <- predict(rf_model, newdata = test[, selected_vars])
+predictions <- predict(rf_model, newdata = test5)
+
+mse <- mean((test5$AMZN.Close - predictions)^2)
+print(paste("Mean squared error:", mse))
+```
+
+```{r}
+data = train[c(selected_vars1, "AMZN.Close")]
+head(data)
+```
+
+```{r}
+# Fit a linear regression model
+# Fit a multiple linear regression model
+model <- lm(AMZN.Close ~ ., data = train5)
+summary(model)
+```
+
+```{r}
+predictions <- predict(model, newdata = test5)
+mse <- mean((test5$AMZN.Close - predictions)^2)
+mse
+```
